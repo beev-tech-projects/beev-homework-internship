@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Fleet Management Dashboard</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/socket.io/4.7.4/socket.io.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: white;
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+
+        .header {
+            text-align: center;
+            color: black;
+            margin-bottom: 30px;
+        }
+
+        .header h1 {
+            font-size: 2.5em;
+            margin-bottom: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 15px;
+        }
+
+        .header h1 i {
+            width: 40px;
+            height: 40px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 20px;
+            margin-bottom: 30px;
+        }
+
+        .stat-card {
+            background: white;
+            padding: 20px;
+            border-radius: 12px;
+            border: 2px solid black;
+            text-align: center;
+        }
+
+        .stat-card h3 {
+            color: black;
+            margin-bottom: 10px;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .stat-card .value {
+            font-size: 2em;
+            font-weight: bold;
+            color: black;
+        }
+
+        .vehicles-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+            gap: 20px;
+            margin-bottom: 20px;
+        }
+
+        .vehicle-card {
+            background: white;
+            border-radius: 12px;
+            padding: 20px;
+            border: 2px solid black;
+            transition: transform 0.2s ease;
+        }
+
+        .vehicle-card:hover {
+            transform: translateY(-5px);
+        }
+
+        .vehicle-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+        }
+
+        .vehicle-name {
+            font-weight: bold;
+            color: black;
+            font-size: 1.1em;
+        }
+
+        .vehicle-id {
+            font-size: 0.8em;
+            color: black;
+            background: white;
+            border: 1px solid black;
+            padding: 4px 8px;
+            border-radius: 12px;
+        }
+
+        .status-badge {
+            padding: 6px 12px;
+            border-radius: 20px;
+            font-size: 0.8em;
+            font-weight: bold;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            border: 1px solid black;
+        }
+
+        .status-available {
+            background: white;
+            color: black;
+        }
+
+        .status-in_use {
+            background: black;
+            color: white;
+        }
+
+        .status-charging {
+            background: white;
+            color: black;
+            border: 2px solid black;
+        }
+
+        .vehicle-details {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 15px;
+        }
+
+        .detail-item {
+            text-align: center;
+        }
+
+        .detail-label {
+            font-size: 0.8em;
+            color: black;
+            margin-bottom: 5px;
+        }
+
+        .detail-value {
+            font-size: 1.2em;
+            font-weight: bold;
+            color: black;
+        }
+
+        .battery-bar {
+            width: 100%;
+            height: 20px;
+            background: white;
+            border: 2px solid black;
+            border-radius: 10px;
+            overflow: hidden;
+            margin: 10px 0;
+            position: relative;
+        }
+
+        .battery-fill {
+            height: 100%;
+            border-radius: 8px;
+            transition: width 0.5s ease;
+            position: relative;
+            background: black;
+        }
+
+        .battery-text {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 0.8em;
+            font-weight: bold;
+            color: white;
+        }
+
+        .connection-status {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            padding: 10px 15px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.8em;
+            border: 2px solid black;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .connection-status i {
+            width: 16px;
+            height: 16px;
+        }
+
+        .connected {
+            background: white;
+            color: black;
+        }
+
+        .disconnected {
+            background: black;
+            color: white;
+        }
+
+        .last-updated {
+            text-align: center;
+            color: black;
+            font-size: 0.9em;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <div class="connection-status" id="connectionStatus">Connecting...</div>
+    
+    <div class="container">
+        <div class="header">
+            <h1>Fleet Management Dashboard</h1>
+            <p>Real-time Electric Vehicle Fleet Monitoring</p>
+        </div>
+
+        <div class="stats-grid" id="statsGrid">
+            <!-- Stats will be populated here -->
+        </div>
+
+        <div class="vehicles-grid" id="vehiclesGrid">
+            <!-- Vehicles will be populated here -->
+        </div>
+
+        <div class="last-updated" id="lastUpdated">
+            <!-- Last update time will be shown here -->
+        </div>
+    </div>
+
+    <script>
+        let socket;
+        let vehicles = {};
+        let stats = {};
+
+        // Initialize socket connection
+        function initSocket() {
+            socket = io();
+
+            socket.on('connect', () => {
+                console.log('Connected to server');
+                updateConnectionStatus(true);
+                loadInitialData();
+            });
+
+            socket.on('disconnect', () => {
+                console.log('Disconnected from server');
+                updateConnectionStatus(false);
+            });
+
+            socket.on('vehicleUpdate', (vehicle) => {
+                vehicles[vehicle.id] = vehicle;
+                updateVehicleCard(vehicle);
+                updateLastUpdated();
+            });
+        }
+
+        // Load initial data
+        async function loadInitialData() {
+            try {
+                const [vehiclesResponse, statsResponse] = await Promise.all([
+                    fetch('/api/vehicles'),
+                    fetch('/api/fleet/stats')
+                ]);
+
+                const vehiclesData = await vehiclesResponse.json();
+                const statsData = await statsResponse.json();
+
+                vehiclesData.forEach(vehicle => {
+                    vehicles[vehicle.id] = vehicle;
+                });
+
+                stats = statsData;
+                
+                renderStats();
+                renderVehicles();
+                updateLastUpdated();
+            } catch (error) {
+                console.error('Error loading initial data:', error);
+            }
+        }
+
+        // Update connection status
+        function updateConnectionStatus(connected) {
+            const status = document.getElementById('connectionStatus');
+            if (connected) {
+                status.innerHTML = 'Connected';
+                status.className = 'connection-status connected';
+            } else {
+                status.innerHTML = 'Disconnected';
+                status.className = 'connection-status disconnected';
+            }
+        }
+
+        // Render statistics
+        function renderStats() {
+            const statsGrid = document.getElementById('statsGrid');
+            const totalVehicles = Object.keys(vehicles).length;
+            const available = Object.values(vehicles).filter(v => v.status === 'available').length;
+            const inUse = Object.values(vehicles).filter(v => v.status === 'in_use').length;
+            const charging = Object.values(vehicles).filter(v => v.status === 'charging').length;
+            const avgBattery = Object.values(vehicles).reduce((sum, v) => sum + v.batteryLevel, 0) / totalVehicles;
+            const totalKm = Object.values(vehicles).reduce((sum, v) => sum + v.kilometers, 0);
+
+            statsGrid.innerHTML = `
+                <div class="stat-card">
+                    <h3>Total Vehicles</h3>
+                    <div class="value">${totalVehicles}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Available</h3>
+                    <div class="value">${available}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>In Use</h3>
+                    <div class="value">${inUse}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Charging</h3>
+                    <div class="value">${charging}</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Avg Battery</h3>
+                    <div class="value">${avgBattery.toFixed(1)}%</div>
+                </div>
+                <div class="stat-card">
+                    <h3>Total Distance</h3>
+                    <div class="value">${totalKm.toFixed(1)} km</div>
+                </div>
+            `;
+        }
+
+        // Render all vehicles
+        function renderVehicles() {
+            const vehiclesGrid = document.getElementById('vehiclesGrid');
+            vehiclesGrid.innerHTML = '';
+
+            Object.values(vehicles).forEach(vehicle => {
+                const vehicleCard = createVehicleCard(vehicle);
+                vehiclesGrid.appendChild(vehicleCard);
+            });
+            
+        }
+
+        // Create individual vehicle card
+        function createVehicleCard(vehicle) {
+            const card = document.createElement('div');
+            card.className = 'vehicle-card';
+            card.id = `vehicle-${vehicle.id}`;
+
+            card.innerHTML = `
+                <div class="vehicle-header">
+                    <div class="vehicle-name">${vehicle.make} ${vehicle.model}</div>
+                    <div class="status-badge status-${vehicle.status}">${vehicle.status.replace('_', ' ')}</div>
+                </div>
+
+                <div class="battery-bar">
+                    <div class="battery-fill" style="width: ${vehicle.batteryLevel}%;">
+                        <div class="battery-text">${vehicle.batteryLevel}%</div>
+                    </div>
+                </div>
+
+                <div class="vehicle-details">
+                    <div class="detail-item">
+                        <div class="detail-label">Distance</div>
+                        <div class="detail-value">${vehicle.kilometers.toFixed(1)} km</div>
+                    </div>
+                </div>
+            `;
+
+            return card;
+        }
+
+        // Update existing vehicle card
+        function updateVehicleCard(vehicle) {
+            const existingCard = document.getElementById(`vehicle-${vehicle.id}`);
+            if (existingCard) {
+                const newCard = createVehicleCard(vehicle);
+                existingCard.replaceWith(newCard);
+            } else {
+                renderVehicles(); // Re-render all if card doesn't exist
+            }
+            renderStats(); // Update stats
+        }
+
+        // Update last updated timestamp
+        function updateLastUpdated() {
+            const lastUpdated = document.getElementById('lastUpdated');
+            lastUpdated.textContent = `Last updated: ${new Date().toLocaleTimeString()}`;
+        }
+
+        // Initialize the dashboard
+        document.addEventListener('DOMContentLoaded', () => {
+            initSocket();
+        });
+    </script>
+</body>
+</html>
